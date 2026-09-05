@@ -6,6 +6,7 @@ const {
   hasApplication,
   deleteApplicationsByUser,
 } = require('./db');
+const { deleteRowsByTelegramId } = require('./sheets');
 const applicationScene = require('./scenes/application');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -53,6 +54,7 @@ bot.command('ariza', startApplication);
 
 bot.action('confirm_new_app', async (ctx) => {
   deleteApplicationsByUser(ctx.from.id);
+  await deleteRowsByTelegramId(ctx.from.id);
   await ctx.answerCbQuery();
   await ctx.editMessageReplyMarkup(undefined).catch(() => {});
   return ctx.scene.enter('application');
@@ -76,7 +78,7 @@ bot.on('channel_post', (ctx) => {
 bot.command('cancel', (ctx) => {
   if (ctx.scene?.current) {
     ctx.scene.leave();
-    return ctx.reply('Bekor qilindi.', Markup.removeKeyboard());
+    return ctx.reply('Bekor qilindi.', Markup.keyboard([['📝 Ariza topshirish']]).resize());
   }
   return ctx.reply('Hozir faol jarayon yoʻq.');
 });

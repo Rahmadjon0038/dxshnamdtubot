@@ -94,7 +94,7 @@ function buildStepHandler(index) {
   return async (ctx) => {
     if (ctx.message?.text === CANCEL_TEXT) {
       ctx.scene.leave();
-      return ctx.reply('Ariza bekor qilindi.', Markup.removeKeyboard());
+      return ctx.reply('Ariza bekor qilindi.', Markup.keyboard([['📝 Ariza topshirish']]).resize());
     }
 
     // "Boshqa" tanlanganda qo'shimcha aniqlashtiruvchi javobni kutish holati
@@ -171,7 +171,7 @@ for (let i = 1; i <= QUESTIONS.length; i++) {
 steps.push(async (ctx) => {
   if (ctx.message?.text === CANCEL_TEXT) {
     ctx.scene.leave();
-    return ctx.reply('Ariza bekor qilindi.', Markup.removeKeyboard());
+    return ctx.reply('Ariza bekor qilindi.', Markup.keyboard([['📝 Ariza topshirish']]).resize());
   }
 
   const photo = ctx.message?.photo;
@@ -212,6 +212,8 @@ steps.push(async (ctx) => {
     `15. Tyutor F.I.Sh va telefon: ${v(data.tyutor_fish_tel)}`,
     ``,
     `👤 Telegram: ${ctx.from.username ? '@' + ctx.from.username : ctx.from.id}`,
+    ``,
+    `🤖 @${ctx.botInfo?.username || 'DxshNamdtuBot'}`,
   ].join('\n');
 
   const groupChatId = process.env.GROUP_CHAT_ID;
@@ -227,7 +229,7 @@ steps.push(async (ctx) => {
 
   await ctx.reply(
     '✅ Arizangiz qabul qilindi. Rahmat!',
-    Markup.removeKeyboard()
+    Markup.keyboard([['📝 Ariza topshirish']]).resize()
   );
   return ctx.scene.leave();
 });

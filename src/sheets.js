@@ -87,4 +87,22 @@ async function appendApplication(data, telegramId) {
   }
 }
 
-module.exports = { appendApplication, isEnabled };
+async function deleteRowsByTelegramId(telegramId) {
+  if (!isEnabled) return;
+  try {
+    const { sheet } = await getDoc();
+    const rows = await sheet.getRows();
+    const matching = rows.filter(
+      (row) => String(row.get('Telegram ID')) === String(telegramId)
+    );
+    // Pastdan yuqoriga o'chiramiz, aks holda qator raqamlari siljib ketadi
+    matching.sort((a, b) => b.rowNumber - a.rowNumber);
+    for (const row of matching) {
+      await row.delete();
+    }
+  } catch (err) {
+    console.error("Google Sheets'dan o'chirishda xatolik:", err.message);
+  }
+}
+
+module.exports = { appendApplication, deleteRowsByTelegramId, isEnabled };
