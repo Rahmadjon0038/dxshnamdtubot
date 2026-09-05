@@ -1,0 +1,17 @@
+{
+  "name": "dxshnamdtu-bot",
+  "version": "1.0.0",
+  "description": "Talaba ma'lumotlarini yig'uvchi Telegram bot",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "google-spreadsheet": "^4.1.4",
+    "google-auth-library": "^9.14.1",
+    "telegraf": "^4.16.3"
+  }
+}
