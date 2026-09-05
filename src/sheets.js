@@ -47,8 +47,9 @@ async function getDoc() {
       if (!sheet) {
         sheet = await doc.addSheet({ title: 'Arizalar', headerValues: HEADERS });
       } else {
-        const rows = await sheet.getRows({ limit: 1 }).catch(() => []);
-        if (!sheet.headerValues) {
+        try {
+          await sheet.loadHeaderRow();
+        } catch {
           await sheet.setHeaderRow(HEADERS);
         }
       }

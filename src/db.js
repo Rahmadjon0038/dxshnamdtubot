@@ -1,7 +1,6 @@
 const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
-console.log('test')
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
@@ -49,6 +48,24 @@ function getAllUserIds() {
   return db.prepare('SELECT telegram_id FROM users').all().map((r) => r.telegram_id);
 }
 
+function hasApplication(telegramId) {
+  const row = db
+    .prepare('SELECT id FROM applications WHERE telegram_id = ? LIMIT 1')
+    .get(telegramId);
+  return Boolean(row);
+}
+
+function deleteApplicationsByUser(telegramId) {
+  db.prepare('DELETE FROM applications WHERE telegram_id = ?').run(telegramId);
+}
+
+const APPLICATION_FIELDS = [
+  'joylashgan_sanasi', 'fish', 'passport_seriyasi', 'tugilgan_sanasi',
+  'jinsi', 'fakulteti', 'guruh_raqami', 'kursi', 'talim_turi', 'talim_shakli',
+  'viloyat_tuman', 'telefon_raqami', 'ijtimoiy_holati', 'xona_raqami',
+  'tyutor_fish_tel', 'photo_file_id',
+];
+
 function saveApplication(telegramId, data) {
   const stmt = db.prepare(`
     INSERT INTO applications (
@@ -63,8 +80,19 @@ function saveApplication(telegramId, data) {
       @tyutor_fish_tel, @photo_file_id
     )
   `);
-  const info = stmt.run({ telegramId, ...data });
+  const params = { telegramId };
+  for (const field of APPLICATION_FIELDS) {
+    params[field] = data[field] ?? null;
+  }
+  const info = stmt.run(params);
   return info.lastInsertRowid;
 }
 
-module.exports = { db, upsertUser, getAllUserIds, saveApplication };
+module.exports = {
+  db,
+  upsertUser,
+  getAllUserIds,
+  saveApplication,
+  hasApplication,
+  deleteApplicationsByUser,
+};
