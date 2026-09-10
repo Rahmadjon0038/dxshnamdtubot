@@ -5,6 +5,7 @@ const {
   getAllUserIds,
   hasApplication,
   deleteApplicationsByUser,
+  sqliteSessionStore,
 } = require('./db');
 const { deleteRowsByTelegramId } = require('./sheets');
 const applicationScene = require('./scenes/application');
@@ -19,7 +20,7 @@ if (!BOT_TOKEN) {
 const bot = new Telegraf(BOT_TOKEN);
 const stage = new Scenes.Stage([applicationScene]);
 
-bot.use(session());
+bot.use(session({ store: sqliteSessionStore }));
 bot.use(stage.middleware());
 
 bot.use((ctx, next) => {
@@ -54,7 +55,11 @@ bot.command('ariza', startApplication);
 
 bot.action('confirm_new_app', async (ctx) => {
   deleteApplicationsByUser(ctx.from.id);
-  await deleteRowsByTelegramId(ctx.from.id);
+  // Google Sheets'dan o'chirish butun jadvalni o'qib chiqadi (sekin bo'lishi
+  // mumkin) — foydalanuvchini kutdirmaslik uchun fonda bajaramiz.
+  deleteRowsByTelegramId(ctx.from.id).catch((err) =>
+    console.error("Eski qatorlarni o'chirishda xatolik:", err)
+  );
   await ctx.answerCbQuery();
   await ctx.editMessageReplyMarkup(undefined).catch(() => {});
   return ctx.scene.enter('application');
@@ -92,12 +97,20 @@ bot.command('broadcast', async (ctx) => {
   }
   const ids = getAllUserIds();
   let sent = 0;
-  for (const id of ids) {
-    try {
-      await ctx.telegram.sendMessage(id, text);
-      sent++;
-    } catch (err) {
-      // foydalanuvchi botni bloklagan bo'lishi mumkin
+  // Bittalab yuborish o'rniga kichik guruhlarda parallel yuboramiz — Telegram
+  // reyting chegarasiga (~30 xabar/soniya) urilib qolmaslik uchun guruh
+  // hajmi cheklangan va guruhlar orasida qisqa tanaffus bor, lekin ketma-ket
+  // birma-bir kutishga qaraganda ancha tezroq.
+  const CONCURRENCY = 20;
+  const BATCH_DELAY_MS = 1000;
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((id) => ctx.telegram.sendMessage(id, text))
+    );
+    sent += results.filter((r) => r.status === 'fulfilled').length;
+    if (i + CONCURRENCY < ids.length) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
     }
   }
   return ctx.reply(`Xabar ${sent}/${ids.length} foydalanuvchiga yuborildi.`);
@@ -109,6 +122,21 @@ bot.catch((err, ctx) => {
 
 bot.launch({ dropPendingUpdates: true }, () => {
   console.log('Bot ishga tushdi.');
+}).catch((err) => {
+  if (err?.response?.error_code === 409) {
+    console.error(
+      "XATOLIK: shu BOT_TOKEN bilan boshqa bir nusxa allaqachon ishlab turibdi " +
+      "(409 Conflict). Bir vaqtning o'zida faqat BITTA nusxa ishga tushirilishi kerak, " +
+      "aks holda foydalanuvchilar uchun bot 'qotib qolgandek' ko'rinadi."
+    );
+  } else {
+    console.error('Botni ishga tushirishda xatolik:', err);
+  }
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('Ushlanmagan promise xatoligi:', err);
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));

@@ -186,10 +186,15 @@ steps.push(async (ctx) => {
 
   try {
     saveApplication(telegramId, data);
-    await appendApplication(data, telegramId);
   } catch (err) {
     console.error('Arizani saqlashda xatolik:', err, JSON.stringify(data));
   }
+  // Google Sheets'ga yozish tarmoq orqali sekin bo'lishi mumkin (ayniqsa
+  // birinchi chaqiruvda autentifikatsiya bilan) — foydalanuvchini kutdirmaslik
+  // uchun buni fonda bajaramiz, javob yuborishni kutmaymiz.
+  appendApplication(data, telegramId).catch((err) =>
+    console.error("Google Sheets'ga yozishda xatolik:", err)
+  );
 
   const v = (val) => (val ? val : '—');
   const caption = [
@@ -217,20 +222,23 @@ steps.push(async (ctx) => {
   ].join('\n');
 
   const groupChatId = process.env.GROUP_CHAT_ID;
-  if (groupChatId) {
-    try {
-      await ctx.telegram.sendPhoto(groupChatId, fileId, { caption });
-    } catch (err) {
-      console.error('Guruhga yuborishda xatolik:', err.message);
-    }
-  } else {
+  if (!groupChatId) {
     console.warn('GROUP_CHAT_ID sozlanmagan — ariza faqat DB/Sheets ga saqlandi.');
   }
 
-  await ctx.reply(
-    '✅ Arizangiz qabul qilindi. Rahmat!',
-    Markup.keyboard([['📝 Ariza topshirish']]).resize()
-  );
+  // Guruhga yuborish va foydalanuvchiga javob berish bir-biriga bog'liq emas —
+  // ketma-ket kutish o'rniga parallel bajarib, javob tezroq yetib boradi.
+  await Promise.all([
+    groupChatId
+      ? ctx.telegram
+          .sendPhoto(groupChatId, fileId, { caption })
+          .catch((err) => console.error('Guruhga yuborishda xatolik:', err.message))
+      : Promise.resolve(),
+    ctx.reply(
+      '✅ Arizangiz qabul qilindi. Rahmat!',
+      Markup.keyboard([['📝 Ariza topshirish']]).resize()
+    ),
+  ]);
   return ctx.scene.leave();
 });
 

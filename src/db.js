@@ -6,6 +6,8 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new Database(path.join(dataDir, 'bot.sqlite'));
 db.pragma('journal_mode = WAL');
+// WAL + NORMAL: yozishda bir oz ko'proq tezlik, WAL rejimida xavfsiz.
+db.pragma('synchronous = NORMAL');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -34,6 +36,14 @@ db.exec(`
     tyutor_fish_tel TEXT,
     photo_file_id TEXT,
     created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_applications_telegram_id ON applications(telegram_id);
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    key TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
   );
 `);
 
@@ -88,6 +98,31 @@ function saveApplication(telegramId, data) {
   return info.lastInsertRowid;
 }
 
+// Telegraf session state SQLite'da saqlanadi — bot qayta ishga tushganda yoki
+// bir nechta nusxada ishlaganda (masalan, deploy paytida) foydalanuvchining
+// ariza to'ldirish jarayoni (wizard state) yo'qolib, bot "qotib qolgandek"
+// ko'rinishining oldini oladi (standart session xotirada saqlanadi va process
+// bilan birga yo'qoladi).
+const sessionGetStmt = db.prepare('SELECT data FROM sessions WHERE key = ?');
+const sessionSetStmt = db.prepare(`
+  INSERT INTO sessions (key, data, updated_at) VALUES (?, ?, datetime('now'))
+  ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+`);
+const sessionDeleteStmt = db.prepare('DELETE FROM sessions WHERE key = ?');
+
+const sqliteSessionStore = {
+  get(key) {
+    const row = sessionGetStmt.get(key);
+    return row ? JSON.parse(row.data) : undefined;
+  },
+  set(key, value) {
+    sessionSetStmt.run(key, JSON.stringify(value));
+  },
+  delete(key) {
+    sessionDeleteStmt.run(key);
+  },
+};
+
 module.exports = {
   db,
   upsertUser,
@@ -95,4 +130,5 @@ module.exports = {
   saveApplication,
   hasApplication,
   deleteApplicationsByUser,
+  sqliteSessionStore,
 };
