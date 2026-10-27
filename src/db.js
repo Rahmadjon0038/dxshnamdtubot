@@ -69,6 +69,18 @@ function deleteApplicationsByUser(telegramId) {
   db.prepare('DELETE FROM applications WHERE telegram_id = ?').run(telegramId);
 }
 
+function getApplications(fromId = 0) {
+  return db
+    .prepare(
+      `SELECT a.*, u.username
+       FROM applications a
+       LEFT JOIN users u ON u.telegram_id = a.telegram_id
+       WHERE a.id >= ?
+       ORDER BY a.id`
+    )
+    .all(fromId);
+}
+
 const APPLICATION_FIELDS = [
   'joylashgan_sanasi', 'fish', 'passport_seriyasi', 'tugilgan_sanasi',
   'jinsi', 'fakulteti', 'guruh_raqami', 'kursi', 'talim_turi', 'talim_shakli',
@@ -130,5 +142,6 @@ module.exports = {
   saveApplication,
   hasApplication,
   deleteApplicationsByUser,
+  getApplications,
   sqliteSessionStore,
 };

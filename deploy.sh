@@ -29,4 +29,4 @@ echo "==> Holat:"
 $COMPOSE ps
 
 echo ""
-echo "Loglarni ko'rish uchun: docker logs -f dxshnamdtu-bot"
+echo "Loglarni ko'rish uchun: $COMPOSE logs -f bot"

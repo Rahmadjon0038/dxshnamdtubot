@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    container_name: dxshnamdtu-bot
+    container_name: ${CONTAINER_NAME:-dxshnamdtu-bot}
     restart: unless-stopped
     env_file:
       - .env

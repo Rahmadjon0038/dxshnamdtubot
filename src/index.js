@@ -9,6 +9,8 @@ const {
 } = require('./db');
 const { deleteRowsByTelegramId } = require('./sheets');
 const applicationScene = require('./scenes/application');
+const { adminOnly, registerRestore, hasAdmins } = require('./admin');
+const { WELCOME_TEXT, startKeyboard } = require('./messages');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -30,12 +32,7 @@ bot.use((ctx, next) => {
   return next();
 });
 
-bot.start((ctx) => {
-  return ctx.reply(
-    "Assalomu alaykum! Bu bot orqali talaba ma'lumotlarini topshirishingiz mumkin.\n\nBoshlash uchun tugmani bosing.",
-    Markup.keyboard([['📝 Ariza topshirish']]).resize()
-  );
-});
+bot.start((ctx) => ctx.reply(WELCOME_TEXT, startKeyboard()));
 
 async function startApplication(ctx) {
   if (hasApplication(ctx.from.id)) {
@@ -89,8 +86,8 @@ bot.command('cancel', (ctx) => {
 });
 
 // Adminlar uchun: barcha foydalanuvchilarga xabar yuborish
-// Foydalanish: xabarga reply qilib /broadcast yozing (faqat botni ishga tushirgan admin ID lar uchun cheklash tavsiya etiladi)
-bot.command('broadcast', async (ctx) => {
+// Foydalanish: /broadcast <xabar matni> (faqat .env dagi ADMIN_IDS ro'yxatidagi adminlar uchun)
+bot.command('broadcast', adminOnly, async (ctx) => {
   const text = ctx.message.text.replace('/broadcast', '').trim();
   if (!text) {
     return ctx.reply("Foydalanish: /broadcast <xabar matni>");
@@ -115,6 +112,12 @@ bot.command('broadcast', async (ctx) => {
   }
   return ctx.reply(`Xabar ${sent}/${ids.length} foydalanuvchiga yuborildi.`);
 });
+
+// Adminlar uchun: bazadagi arizalarni guruh/kanalga qayta yuborish (/restore)
+registerRestore(bot);
+if (!hasAdmins) {
+  console.warn("ADMIN_IDS sozlanmagan — /broadcast va /restore hech kim uchun ishlamaydi.");
+}
 
 bot.catch((err, ctx) => {
   console.error(`Xatolik yuz berdi (${ctx.updateType}):`, err);

@@ -1,6 +1,8 @@
 const { Scenes, Markup } = require('telegraf');
 const { saveApplication } = require('../db');
 const { appendApplication } = require('../sheets');
+const { buildCaption, sendApplication } = require('../applicationPost');
+const { WELCOME_TEXT, startKeyboard } = require('../messages');
 
 const CANCEL_TEXT = '❌ Bekor qilish';
 const OTHER_TEXT = 'Boshqa';
@@ -152,17 +154,18 @@ async function advance(ctx, index) {
   return ctx.wizard.next();
 }
 
-const steps = [
-  async (ctx) => {
-    ctx.wizard.state.data = {};
-    ctx.wizard.state.awaitingOtherFor = null;
-    await ctx.reply(
-      "Ariza topshirish boshlandi. Har bir savolga navbat bilan javob bering."
-    );
-    await askQuestion(ctx, QUESTIONS[0], 1);
-    return ctx.wizard.next();
-  },
-];
+async function startForm(ctx) {
+  ctx.wizard.state.data = {};
+  ctx.wizard.state.awaitingOtherFor = null;
+  ctx.wizard.state.submitted = false;
+  await ctx.reply(
+    "Ariza topshirish boshlandi. Har bir savolga navbat bilan javob bering."
+  );
+  await askQuestion(ctx, QUESTIONS[0], 1);
+  return ctx.wizard.selectStep(1);
+}
+
+const steps = [startForm];
 
 for (let i = 1; i <= QUESTIONS.length; i++) {
   steps.push(buildStepHandler(i));
@@ -178,6 +181,11 @@ steps.push(async (ctx) => {
   if (!photo || photo.length === 0) {
     return ctx.reply("Iltimos, rasmni fotosurat (photo) sifatida yuboring, fayl sifatida emas.");
   }
+  // Bir vaqtda kelgan bir nechta rasm (albom yoki qayta yuborish) arizani takror saqlamasligi
+  // uchun: holat barcha parallel xabarlar uchun umumiy, belgi await'dan oldin o'rnatiladi.
+  if (ctx.wizard.state.submitted) return;
+  ctx.wizard.state.submitted = true;
+
   const fileId = photo[photo.length - 1].file_id;
   ctx.wizard.state.data.photo_file_id = fileId;
 
@@ -196,52 +204,45 @@ steps.push(async (ctx) => {
     console.error("Google Sheets'ga yozishda xatolik:", err)
   );
 
-  const v = (val) => (val ? val : '—');
-  const caption = [
-    `📥 Yangi ariza`,
-    ``,
-    `1. Talabalar turar joyiga joylashgan sana: ${v(data.joylashgan_sanasi)}`,
-    `2. F.I.Sh.: ${v(data.fish)}`,
-    `3. Passport seriyasi: ${v(data.passport_seriyasi)}`,
-    `4. Tug'ilgan sanasi: ${v(data.tugilgan_sanasi)}`,
-    `5. Jinsi: ${v(data.jinsi)}`,
-    `6. Fakulteti: ${v(data.fakulteti)}`,
-    `7. Guruh raqami: ${v(data.guruh_raqami)}`,
-    `8. Kursi: ${v(data.kursi)}`,
-    `9. Ta'lim turi: ${v(data.talim_turi)}`,
-    `10. Ta'lim shakli: ${v(data.talim_shakli)}`,
-    `11. Viloyat va tuman: ${v(data.viloyat_tuman)}`,
-    `12. Telefon raqami: ${v(data.telefon_raqami)}`,
-    `13. Ijtimoiy holati: ${v(data.ijtimoiy_holati)}`,
-    `14. Xona raqami: ${v(data.xona_raqami)}`,
-    `15. Tyutor F.I.Sh va telefon: ${v(data.tyutor_fish_tel)}`,
-    ``,
-    `👤 Telegram: ${ctx.from.username ? '@' + ctx.from.username : ctx.from.id}`,
-    ``,
-    `🤖 @${ctx.botInfo?.username || 'DxshNamdtuBot'}`,
-  ].join('\n');
+  const caption = buildCaption(data, {
+    username: ctx.from.username,
+    telegramId,
+    botUsername: ctx.botInfo?.username,
+  });
 
+  // Guruhga yuborish fonda bajariladi: foydalanuvchi javobni kutmaydi, Telegram limiti
+  // (429) bo'lsa ham kechikmaydi. Ariza bazada saqlangan, kerak bo'lsa /restore bilan
+  // qayta yuborish mumkin.
   const groupChatId = process.env.GROUP_CHAT_ID;
-  if (!groupChatId) {
+  if (groupChatId) {
+    sendApplication(ctx.telegram, groupChatId, fileId, caption).catch((err) =>
+      console.error('Guruhga yuborishda xatolik:', err.message)
+    );
+  } else {
     console.warn('GROUP_CHAT_ID sozlanmagan — ariza faqat DB/Sheets ga saqlandi.');
   }
 
-  // Guruhga yuborish va foydalanuvchiga javob berish bir-biriga bog'liq emas —
-  // ketma-ket kutish o'rniga parallel bajarib, javob tezroq yetib boradi.
-  await Promise.all([
-    groupChatId
-      ? ctx.telegram
-          .sendPhoto(groupChatId, fileId, { caption })
-          .catch((err) => console.error('Guruhga yuborishda xatolik:', err.message))
-      : Promise.resolve(),
-    ctx.reply(
-      '✅ Arizangiz qabul qilindi. Rahmat!',
-      Markup.keyboard([['📝 Ariza topshirish']]).resize()
-    ),
-  ]);
+  await ctx.reply(
+    '✅ Arizangiz qabul qilindi. Rahmat!',
+    Markup.keyboard([['📝 Ariza topshirish']]).resize()
+  );
   return ctx.scene.leave();
 });
 
 const applicationScene = new Scenes.WizardScene('application', ...steps);
+
+// Wizard har qanday xabarni "javob" deb qabul qiladi, shuning uchun buyruqlar shu yerda
+// alohida ushlanadi — aks holda talaba jarayondan chiqa olmay, bot "qotib qolgandek" bo'ladi.
+applicationScene.command('cancel', async (ctx) => {
+  await ctx.scene.leave();
+  return ctx.reply('Ariza bekor qilindi.', startKeyboard());
+});
+applicationScene.command('start', async (ctx) => {
+  await ctx.scene.leave();
+  return ctx.reply(WELCOME_TEXT, startKeyboard());
+});
+// Diqqat: bu yerda ctx.scene.reenter() ishlatmang — u joriy xabarni sahnaga qayta beradi va
+// shu buyruq cheksiz takrorlanib, jarayon xotirasi to'lib qulaydi.
+applicationScene.command('ariza', startForm);
 
 module.exports = applicationScene;
